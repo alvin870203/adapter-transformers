@@ -47,7 +47,7 @@ This class allows flexible adding of and switching between multiple prediction h
     - This module should implement the `<model_type>AdapterModel` class, deriving from `ModelWithFlexibleHeadsAdaptersMixin` and `<model_type>PreTrainedModel`.
     - In the model class, add methods for those prediction heads that make sense for the new model architecture.
     - Again, have a look at existing implementations, e.g. `bert.py`. Note that the `<model_type>ModelWithHeads` classes in existing modules are kept for backwards compatibility and are not needed for newly added architectures.
-- Add `<model_type>AdapterModel` to the `ADAPTER_MODEL_MAPPING_NAMES` mapping in `src/transformers/adapters/models/auto.py` and to `src/transformers/adapters/__init__.py`.
+- Add `<model_type>AdapterModel` to the `ADAPTER_MODEL_MAPPING_NAMES` mapping in `src/transformers/adapters/models/auto.py` and to `src/transformers/adapters/__init__.py`, and to `src/transformers/__init__.py`.
 
 ### Additional (optional) implementation steps
 

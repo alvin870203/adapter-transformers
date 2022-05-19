@@ -99,7 +99,7 @@ _import_structure = {
         "DistilBertAdapterModel",
         "DistilBertModelWithHeads",
     ],
-    "model.electra": [
+    "models.electra": [
         "ElectraAdapterModel",
         "ElectraModelWithHeads",
     ],

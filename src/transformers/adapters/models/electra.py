@@ -26,7 +26,7 @@ class ElectraAdapterModel(ModelWithFlexibleHeadsAdaptersMixin, ElectraPreTrained
         super().__init__(config)
 
         self.electra = ElectraModel(config)
-        self.sequence_summary = SequenceSummary(config)
+        #self.sequence_summary = SequenceSummary(config)
 
         self._init_head_modules()
 
@@ -73,17 +73,18 @@ class ElectraAdapterModel(ModelWithFlexibleHeadsAdaptersMixin, ElectraPreTrained
         )
         
         # pooled_output for ElectraForMultipleChoice
-        pooled_output = self.sequence_summary(electra_outputs[0])
+        #pooled_output = self.sequence_summary(electra_outputs[0])
         # FIXME: Whether to use pooled_output as original ElectraForMultipleChoice from huggingface?
         #        or not to use pooled_output as most of ones in adapter-hub? 
         #        (except for bert & roberta, but they also won't use it in default config (use_pooler=False)
-        
+        # Conclusion: we can define all layers of SequenceSummary(config) in transformers/adapters/head_utils.py
+
         outputs = self.forward_head(
             electra_outputs, 
             head_name=head, 
             attention_mask=attention_mask, 
             return_dict=return_dict, 
-            pooled_output=pooled_output,
+            #pooled_output=pooled_output,
             **kwargs,
         )
         
