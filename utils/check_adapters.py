@@ -13,6 +13,7 @@ MODELS_WITH_ADAPTERS = [
     "gpt2",
     "encoder_decoder",
     "t5",
+    "electra",
 ]
 
 IGNORE_NOT_IMPLEMENTING_MIXIN = [

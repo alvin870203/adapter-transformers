@@ -99,6 +99,10 @@ _import_structure = {
         "DistilBertAdapterModel",
         "DistilBertModelWithHeads",
     ],
+    "model.electra": [
+        "ElectraAdapterModel",
+        "ElectraModelWithHeads",
+    ],
     "models.gpt2": [
         "GPT2AdapterModel",
         "GPT2ModelWithHeads",
@@ -190,6 +194,7 @@ if TYPE_CHECKING:
     from .models.bart import BartAdapterModel, BartModelWithHeads
     from .models.bert import BertAdapterModel, BertModelWithHeads
     from .models.distilbert import DistilBertAdapterModel, DistilBertModelWithHeads
+    from .models.electra import ElectraAdapterModel, ElectraModelWithHeads
     from .models.gpt2 import GPT2AdapterModel, GPT2ModelWithHeads
     from .models.mbart import MBartAdapterModel, MBartModelWithHeads
     from .models.roberta import RobertaAdapterModel, RobertaModelWithHeads
