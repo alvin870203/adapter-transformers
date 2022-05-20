@@ -656,10 +656,6 @@ class ElectraDiscriminatorPredictions(nn.Module):
     def forward(self, discriminator_hidden_states):
         hidden_states = self.dense(discriminator_hidden_states)
         hidden_states = get_activation(self.config.hidden_act)(hidden_states)
-        # FIXME: Do we still need invertible_adapters_forward(..., rev=True) here? 
-        #        Cannot apply invertible_adapters_forward here directly,
-        #        because no nn.Linear(hidden_size, vocab_size) here (dim size will mismath).
-        #        But how about conceptually? Should here be an invert adapter?
         logits = self.dense_prediction(hidden_states).squeeze(-1)
 
         return logits
@@ -941,6 +937,7 @@ class ElectraModel(ElectraModelAdaptersMixin, ElectraPreTrainedModel):
 
         if hasattr(self, "embeddings_project"):
             hidden_states = self.embeddings_project(hidden_states)
+
 
         hidden_states = self.encoder(
             hidden_states,
