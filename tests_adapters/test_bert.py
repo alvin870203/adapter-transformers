@@ -1,6 +1,7 @@
 import unittest
 
 from tests.bert.test_modeling_bert import *
+from tests_adapters.methods.test_lora import LoRATestMixin
 from transformers import BertAdapterModel
 from transformers.testing_utils import require_torch
 
@@ -38,6 +39,7 @@ class BertAdapterTestBase(AdapterTestBase):
 class BertAdapterTest(
     BottleneckAdapterTestMixin,
     CompacterTestMixin,
+    LoRATestMixin,
     PrefixTuningTestMixin,
     EmbeddingTestMixin,
     AdapterFusionModelTestMixin,
