@@ -29,6 +29,9 @@ CONFIG_CLASS_KEYS_MAPPING = {
         "attention_probs_dropout_prob": "attention_dropout",
     },
     "roberta": {},
+    "swin": {
+        "num_attention_heads": "num_heads",
+    },
     "t5": {
         "hidden_size": "d_model",
         "num_attention_heads": "num_heads",

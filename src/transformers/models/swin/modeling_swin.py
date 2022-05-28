@@ -17,13 +17,19 @@
 
 import collections.abc
 import math
+from typing import Optional
 
 import torch
 import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
-
+from ...adapters.lora import Linear as LoRALinear
 from ...activations import ACT2FN
+from ...adapters.composition import adjust_tensors_for_parallel  # FIXME: not sure where to add
+from ...adapters.context import ForwardContext
+from ...adapters.mixins.swin import SwinModelAdaptersMixin, SwinBlockAdaptersMixin
+# from ...adapters.model_mixin import ModelWithHeadsAdaptersMixin
+from ...adapters.prefix_tuning import PrefixTuningShim
 from ...file_utils import (
     add_code_sample_docstrings,
     add_start_docstrings,
@@ -224,7 +230,7 @@ class SwinDropPath(nn.Module):
 
 
 class SwinSelfAttention(nn.Module):
-    def __init__(self, config, dim, num_heads):
+    def __init__(self, config, dim, num_heads, location_key: Optional[str] = None):
         super().__init__()
         if dim % num_heads != 0:
             raise ValueError(
@@ -253,11 +259,16 @@ class SwinSelfAttention(nn.Module):
         relative_position_index = relative_coords.sum(-1)
         self.register_buffer("relative_position_index", relative_position_index)
 
-        self.query = nn.Linear(self.all_head_size, self.all_head_size, bias=config.qkv_bias)
+        # self.query = nn.Linear(self.all_head_size, self.all_head_size, bias=config.qkv_bias)
+        self.query = LoRALinear(self.all_head_size, self.all_head_size, "selfattn", config, bias=config.qkv_bias)
         self.key = nn.Linear(self.all_head_size, self.all_head_size, bias=config.qkv_bias)
-        self.value = nn.Linear(self.all_head_size, self.all_head_size, bias=config.qkv_bias)
+        # self.value = nn.Linear(self.all_head_size, self.all_head_size, bias=config.qkv_bias)
+        self.value = LoRALinear(self.all_head_size, self.all_head_size, "selfattn", config, bias=config.qkv_bias)
+        
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+        
+        self.prefix_tuning = PrefixTuningShim(location_key + "_prefix" if location_key else None, config)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -277,6 +288,8 @@ class SwinSelfAttention(nn.Module):
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
         query_layer = self.transpose_for_scores(mixed_query_layer)
+        
+        key_layer, value_layer, attention_mask = self.prefix_tuning(key_layer, value_layer, attention_mask)
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
@@ -335,9 +348,9 @@ class SwinSelfOutput(nn.Module):
 
 
 class SwinAttention(nn.Module):
-    def __init__(self, config, dim, num_heads):
+    def __init__(self, config, dim, num_heads, location_key: Optional[str] = None):
         super().__init__()
-        self.self = SwinSelfAttention(config, dim, num_heads)
+        self.self = SwinSelfAttention(config, dim, num_heads, location_key=location_key)
         self.output = SwinSelfOutput(config, dim)
         self.pruned_heads = set()
 
@@ -369,7 +382,8 @@ class SwinAttention(nn.Module):
 class SwinIntermediate(nn.Module):
     def __init__(self, config, dim):
         super().__init__()
-        self.dense = nn.Linear(dim, int(config.mlp_ratio * dim))
+        # self.dense = nn.Linear(dim, int(config.mlp_ratio * dim))
+        self.dense = LoRALinear(dim, int(config.mlp_ratio * dim), "intermediate", config)
         if isinstance(config.hidden_act, str):
             self.intermediate_act_fn = ACT2FN[config.hidden_act]
         else:
@@ -384,7 +398,8 @@ class SwinIntermediate(nn.Module):
 class SwinOutput(nn.Module):
     def __init__(self, config, dim):
         super().__init__()
-        self.dense = nn.Linear(int(config.mlp_ratio * dim), dim)
+        # self.dense = nn.Linear(int(config.mlp_ratio * dim), dim)
+        self.dense = LoRALinear(int(config.mlp_ratio * dim), dim, "output", config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states):
@@ -393,9 +408,11 @@ class SwinOutput(nn.Module):
         return hidden_states
 
 
-class SwinBlock(nn.Module):
+class SwinBlock(SwinBlockAdaptersMixin, nn.Module):
     def __init__(self, config, dim, input_resolution, num_heads, shift_size=0):
         super().__init__()
+        self.config = config
+        
         self.chunk_size_feed_forward = config.chunk_size_feed_forward
         self.shift_size = shift_size
         self.window_size = config.window_size
@@ -407,7 +424,7 @@ class SwinBlock(nn.Module):
             self.window_size = min(self.input_resolution)
 
         self.layernorm_before = nn.LayerNorm(dim, eps=config.layer_norm_eps)
-        self.attention = SwinAttention(config, dim, num_heads)
+        self.attention = SwinAttention(config, dim, num_heads, location_key="self")
         self.drop_path = SwinDropPath(config.drop_path_rate) if config.drop_path_rate > 0.0 else nn.Identity()
         self.layernorm_after = nn.LayerNorm(dim, eps=config.layer_norm_eps)
         self.intermediate = SwinIntermediate(config, dim)
@@ -441,6 +458,8 @@ class SwinBlock(nn.Module):
             attn_mask = None
 
         self.attn_mask = attn_mask
+        
+        self._init_adapter_modules()
 
     def forward(self, hidden_states, head_mask=None, output_attentions=False):
         height, width = self.input_resolution
@@ -485,11 +504,14 @@ class SwinBlock(nn.Module):
 
         attention_windows = attention_windows.view(batch_size, height * width, channels)
 
-        hidden_states = shortcut + self.drop_path(attention_windows)
-
+        # hidden_states = shortcut + self.drop_path(attention_windows)
+        hidden_states = self.attention_adapters(self.drop_path(attention_windows), shortcut, layer_norm=None)
+        
         layer_output = self.layernorm_after(hidden_states)
         layer_output = self.intermediate(layer_output)
-        layer_output = hidden_states + self.output(layer_output)
+        
+        # layer_output = hidden_states + self.output(layer_output)
+        layer_output = self.output_adapters(self.output(layer_output), hidden_states, layer_norm=None)
 
         outputs = (layer_output,) + outputs
 
@@ -681,7 +703,7 @@ SWIN_INPUTS_DOCSTRING = r"""
     "The bare Swin Model transformer outputting raw hidden-states without any specific head on top.",
     SWIN_START_DOCSTRING,
 )
-class SwinModel(SwinPreTrainedModel):
+class SwinModel(SwinModelAdaptersMixin, SwinPreTrainedModel):
     def __init__(self, config, add_pooling_layer=True, use_mask_token=False):
         super().__init__(config)
         self.config = config
@@ -693,6 +715,8 @@ class SwinModel(SwinPreTrainedModel):
 
         self.layernorm = nn.LayerNorm(self.num_features, eps=config.layer_norm_eps)
         self.pooler = nn.AdaptiveAvgPool1d(1) if add_pooling_layer else None
+
+        self._init_adapter_modules()
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -717,6 +741,7 @@ class SwinModel(SwinPreTrainedModel):
         modality="vision",
         expected_output=_EXPECTED_OUTPUT_SHAPE,
     )
+    @ForwardContext.wrap
     def forward(
         self,
         pixel_values=None,
