@@ -142,3 +142,7 @@ class SwinConfig(PretrainedConfig):
         # we set the hidden_size attribute in order to make Swin work with VisionEncoderDecoderModel
         # this indicates the channel dimension after the last stage of the model
         self.hidden_size = embed_dim * 8
+        # list of different embed_dim for each depth
+        self.hidden_size_per_sublayer = [int(embed_dim * 2**i_layer) for i_layer in range(self.num_layers) for n_sublayers in range(depths[i_layer])]
+        # self.num_heads_per_sublayer = [num_heads[i_layer] for i_layer in range(self.num_layers) for n_sublayers in range(depths[i_layer])]
+        # self.n_embd_per_head = [int(hidden_size / num_attention_heads) for hidden_size, num_attention_heads in zip(self.hidden_size_per_sublayer, self.num_heads_per_sublayer)]

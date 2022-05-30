@@ -108,8 +108,8 @@ class AdapterLayer(AdapterLayerBase, nn.Module):
                 adapter_class = Adapter
             adapter = adapter_class(
                 adapter_name=adapter_name,
-                input_size=self.config.hidden_size,
-                down_sample=int(self.config.hidden_size // reduction_factor),
+                input_size=self.config.hidden_size if isinstance(self.config.hidden_size, int) else self.config.hidden_size[self.layer_idx],
+                down_sample=int((self.config.hidden_size if isinstance(self.config.hidden_size, int) else self.config.hidden_size[self.layer_idx]) // reduction_factor),
                 config=adapter_config,
             )
             adapter.train(self.training)  # make sure training mode is consistent
@@ -126,7 +126,7 @@ class AdapterLayer(AdapterLayerBase, nn.Module):
             fusion_config = self.config.adapters.get_fusion(adapter_names)
             fusion = BertFusion(
                 fusion_config,
-                self.config.hidden_size,
+                self.config.hidden_size if isinstance(self.config.hidden_size, int) else self.config.hidden_size[self.layer_idx],
                 self.config.attention_probs_dropout_prob,
             )
             fusion.train(self.training)  # make sure training mode is consistent

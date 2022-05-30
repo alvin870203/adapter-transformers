@@ -739,10 +739,14 @@ class ModelAdaptersMixin(PushAdapterToHubMixin, ABC):
     def get_fusion_regularization_loss(self):
         reg_loss = 0.0
 
-        target = torch.zeros((self.config.hidden_size, self.config.hidden_size)).fill_diagonal_(1.0).to(self.device)
+        # target = torch.zeros((self.config.hidden_size, self.config.hidden_size)).fill_diagonal_(1.0).to(self.device)
         for i, layer in self.iter_layers():
             for module in layer.modules():
                 if isinstance(module, AdapterLayer):
+                    if isinstance(self.config.hidden_size, int):
+                        target = torch.zeros((self.config.hidden_size, self.config.hidden_size)).fill_diagonal_(1.0).to(self.device)
+                    else:
+                        target = torch.zeros((self.config.hidden_size[i], self.config.hidden_size[i])).fill_diagonal_(1.0).to(self.device)
                     for _, layer_fusion in module.adapter_fusion_layer.items():
                         if hasattr(layer_fusion, "value"):
                             reg_loss += 0.01 * (target - layer_fusion.value.weight).pow(2).sum()

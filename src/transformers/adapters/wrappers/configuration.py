@@ -30,6 +30,7 @@ CONFIG_CLASS_KEYS_MAPPING = {
     },
     "roberta": {},
     "swin": {
+        "hidden_size": "hidden_size_per_sublayer",
         "num_attention_heads": "num_heads",
     },
     "t5": {
