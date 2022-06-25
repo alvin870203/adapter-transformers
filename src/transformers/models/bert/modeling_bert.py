@@ -243,7 +243,10 @@ class BertSelfAttention(nn.Module):
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.query = LoRALinear(config.hidden_size, self.all_head_size, "selfattn", config)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size)
+        
+        # self.key = nn.Linear(config.hidden_size, self.all_head_size)
+        self.key = LoRALinear(config.hidden_size, self.all_head_size, "selfattn", config)
+        
         self.value = LoRALinear(config.hidden_size, self.all_head_size, "selfattn", config)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
@@ -272,8 +275,12 @@ class BertSelfAttention(nn.Module):
         encoder_attention_mask=None,
         past_key_value=None,
         output_attentions=False,
+        acu_vis_dict={},  # {layer_idx: acu_vis_feat}
     ):
-        mixed_query_layer = self.query(hidden_states)
+        if self.query.layer_idx in acu_vis_dict:
+            mixed_query_layer = self.query(hidden_states, acu_vis=acu_vis_dict[self.query.layer_idx])
+        else:
+            mixed_query_layer = self.query(hidden_states)
 
         # If this is instantiated as a cross-attention module, the keys
         # and values come from an encoder; the attention mask needs to be
@@ -295,8 +302,12 @@ class BertSelfAttention(nn.Module):
             key_layer = torch.cat([past_key_value[0], key_layer], dim=2)
             value_layer = torch.cat([past_key_value[1], value_layer], dim=2)
         else:
-            key_layer = self.transpose_for_scores(self.key(hidden_states))
-            value_layer = self.transpose_for_scores(self.value(hidden_states))
+            if self.query.layer_idx in acu_vis_dict:
+                key_layer = self.transpose_for_scores(self.key(hidden_states, acu_vis=acu_vis_dict[self.query.layer_idx]))
+                value_layer = self.transpose_for_scores(self.value(hidden_states, acu_vis=acu_vis_dict[self.query.layer_idx]))
+            else:
+                key_layer = self.transpose_for_scores(self.key(hidden_states))
+                value_layer = self.transpose_for_scores(self.value(hidden_states))
 
         query_layer = self.transpose_for_scores(mixed_query_layer)
 
@@ -413,6 +424,7 @@ class BertAttention(nn.Module):
         encoder_attention_mask=None,
         past_key_value=None,
         output_attentions=False,
+        acu_vis_dict={},
     ):
         self_outputs = self.self(
             hidden_states,
@@ -422,6 +434,7 @@ class BertAttention(nn.Module):
             encoder_attention_mask,
             past_key_value,
             output_attentions,
+            acu_vis_dict=acu_vis_dict,
         )
         attention_output = self.output(self_outputs[0], hidden_states)
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
@@ -484,6 +497,7 @@ class BertLayer(nn.Module):
         encoder_attention_mask=None,
         past_key_value=None,
         output_attentions=False,
+        acu_vis_dict={},
     ):
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
@@ -493,6 +507,7 @@ class BertLayer(nn.Module):
             head_mask,
             output_attentions=output_attentions,
             past_key_value=self_attn_past_key_value,
+            acu_vis_dict=acu_vis_dict,
         )
         attention_output = self_attention_outputs[0]
 
@@ -564,6 +579,7 @@ class BertEncoder(nn.Module):
         output_attentions=False,
         output_hidden_states=False,
         return_dict=True,
+        acu_vis_dict={},
     ):
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
@@ -598,6 +614,7 @@ class BertEncoder(nn.Module):
                     layer_head_mask,
                     encoder_hidden_states,
                     encoder_attention_mask,
+                    acu_vis_dict=acu_vis_dict,
                 )
             else:
                 layer_outputs = layer_module(
@@ -608,6 +625,7 @@ class BertEncoder(nn.Module):
                     encoder_attention_mask,
                     past_key_value,
                     output_attentions,
+                    acu_vis_dict=acu_vis_dict,
                 )
 
             hidden_states = layer_outputs[0]
@@ -931,6 +949,7 @@ class BertModel(BertModelAdaptersMixin, BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        acu_vis_dict={},
     ):
         r"""
         encoder_hidden_states  (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
@@ -1031,6 +1050,7 @@ class BertModel(BertModelAdaptersMixin, BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            acu_vis_dict=acu_vis_dict,
         )
         sequence_output = encoder_outputs[0]
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None

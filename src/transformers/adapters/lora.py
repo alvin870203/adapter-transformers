@@ -144,7 +144,7 @@ class Linear(LoRALayer, nn.Linear):
             elif self.merged != name:
                 raise ValueError("LoRaLayer already has a merged LoRA module. Please reset it first.")
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, acu_vis=None):
         def T(w):
             return w.T if self.fan_in_fan_out else w
 
@@ -155,7 +155,12 @@ class Linear(LoRALayer, nn.Linear):
                     result = F.linear(x, T(self.weight), bias=self.bias)
                     lora = self.loras[adapter_setup[0]]
                     if lora.r > 0:
-                        result += (lora.lora_dropout(x) @ lora.lora_A.T @ lora.lora_B.T) * lora.scaling
+                        if acu_vis is not None:
+                            lora_bottleneck = lora.lora_dropout(x) @ lora.lora_A.T
+                            acu_vis_bottleneck = acu_vis / (torch.norm(acu_vis) + 1e-6) * torch.norm(lora_bottleneck) * 1  # TODO: set beta
+                            result += ((lora_bottleneck + acu_vis_bottleneck) @ lora.lora_B.T) * lora.scaling
+                        else:
+                            result += (lora.lora_dropout(x) @ lora.lora_A.T @ lora.lora_B.T) * lora.scaling
                     return result
                 else:
                     raise ValueError(f"Invalid adapter setup. Cannot use {adapter_setup} with LoRA.")
