@@ -117,7 +117,7 @@ class Adapter(nn.Module):
         else:
             raise ValueError("Unknown init_weights type: {}".format(config["init_weights"]))
 
-    def pre_forward(
+    def pre_forward(  #####
         self,
         hidden_states,
         input_tensor,
@@ -157,10 +157,15 @@ class Adapter(nn.Module):
 
         return hidden_states, query, residual
 
-    def forward(self, x, residual_input):  # , residual_input=None):
+    def forward(self, x, residual_input, acu_vis=None):  # , residual_input=None):  #####
         down = self.adapter_down(x)
 
-        up = self.adapter_up(down)
+        if acu_vis is not None:
+            acu_vis_bottleneck = acu_vis / (torch.norm(acu_vis) + 1e-6) * torch.norm(down) * 1  # TODO: set beta
+            up = self.adapter_up(down + acu_vis_bottleneck)
+        else:
+            up = self.adapter_up(down)
+        
         up = up * self.scaling
         output = up
 

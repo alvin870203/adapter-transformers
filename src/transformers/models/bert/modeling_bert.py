@@ -466,10 +466,13 @@ class BertOutput(BertOutputAdaptersMixin, nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self._init_adapter_modules()
 
-    def forward(self, hidden_states, input_tensor):
+    def forward(self, hidden_states, input_tensor, acu_vis_dict={}):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.adapter_layer_forward(hidden_states, input_tensor, self.LayerNorm)
+        if self.layer_idx in acu_vis_dict:
+            hidden_states = self.adapter_layer_forward(hidden_states, input_tensor, self.LayerNorm, acu_vis=acu_vis_dict[self.layer_idx])  ##### Houlsby MAG
+        else:
+            hidden_states = self.adapter_layer_forward(hidden_states, input_tensor, self.LayerNorm)
         return hidden_states
 
 
@@ -507,7 +510,7 @@ class BertLayer(nn.Module):
             head_mask,
             output_attentions=output_attentions,
             past_key_value=self_attn_past_key_value,
-            acu_vis_dict=acu_vis_dict,
+            acu_vis_dict={},  ##### LoRA MAG
         )
         attention_output = self_attention_outputs[0]
 
@@ -543,9 +546,12 @@ class BertLayer(nn.Module):
             cross_attn_present_key_value = cross_attention_outputs[-1]
             present_key_value = present_key_value + cross_attn_present_key_value
 
-        layer_output = apply_chunking_to_forward(
-            self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
-        )
+        # layer_output = apply_chunking_to_forward(
+        #     self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
+        # )
+        
+        layer_output = self.feed_forward_chunk(attention_output, acu_vis_dict=acu_vis_dict)
+        
         outputs = (layer_output,) + outputs
 
         # if decoder, return the attn key/values as the last output
@@ -554,9 +560,9 @@ class BertLayer(nn.Module):
 
         return outputs
 
-    def feed_forward_chunk(self, attention_output):
+    def feed_forward_chunk(self, attention_output, acu_vis_dict={}):
         intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
+        layer_output = self.output(intermediate_output, attention_output, acu_vis_dict=acu_vis_dict)
         return layer_output
 
 

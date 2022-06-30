@@ -168,7 +168,7 @@ class AdapterLayer(AdapterLayerBase, nn.Module):
         else:
             return None
 
-    def adapter_stack(self, adapter_setup: Stack, hidden_states, input_tensor, layer_norm, lvl=0):
+    def adapter_stack(self, adapter_setup: Stack, hidden_states, input_tensor, layer_norm, lvl=0, acu_vis=None):
         """
         Forwards the given input through the given stack of adapters.
         """
@@ -202,9 +202,9 @@ class AdapterLayer(AdapterLayerBase, nn.Module):
                 )
             # Case 5: We have a single adapter which is part of this module -> forward pass
             elif adapter_stack_layer in self.adapters:
-                adapter_layer = self.adapters[adapter_stack_layer]
+                adapter_layer = self.adapters[adapter_stack_layer]  #####
                 hidden_states, _, residual = adapter_layer.pre_forward(hidden_states, input_tensor, layer_norm)
-                hidden_states, _, up = adapter_layer(hidden_states, residual_input=residual)
+                hidden_states, _, up = adapter_layer(hidden_states, residual_input=residual, acu_vis=acu_vis)
                 # as this stack might be part of a fusion block, return the adapter up-projection output here
                 # together with the final output (with potential residuals & norms) if we reached the last block of the stack
                 if i == len(adapter_setup) - 1:
@@ -455,7 +455,7 @@ class AdapterLayer(AdapterLayerBase, nn.Module):
         hidden_states = torch.cat(children_hidden, 0)
         return hidden_states
 
-    def adapter_layer_forward(self, hidden_states, input_tensor, layer_norm):
+    def adapter_layer_forward(self, hidden_states, input_tensor, layer_norm, acu_vis=None):
         """
         Called for each forward pass through adapters.
         """
@@ -465,7 +465,7 @@ class AdapterLayer(AdapterLayerBase, nn.Module):
 
             if isinstance(adapter_setup, Stack):
                 hidden_states, _, input_tensor = self.adapter_stack(
-                    adapter_setup, hidden_states, input_tensor, layer_norm
+                    adapter_setup, hidden_states, input_tensor, layer_norm, acu_vis=acu_vis
                 )
             elif isinstance(adapter_setup, Fuse):
                 hidden_states = self.adapter_fusion(adapter_setup, hidden_states, input_tensor, layer_norm)
